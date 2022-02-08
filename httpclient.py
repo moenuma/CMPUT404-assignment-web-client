@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # coding: utf-8
-# Copyright 2016 Abram Hindle, https://github.com/tywtyw2002, and https://github.com/treedust
+# Copyright 2016 Abram Hindle, Moe Numasawa, https://github.com/tywtyw2002, and https://github.com/treedust
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,7 +33,19 @@ class HTTPResponse(object):
         self.body = body
 
 class HTTPClient(object):
-    # def get_host_port(self,url):
+    def get_host_port_path(self,url):
+        url_parsed = urllib.parse.urlsplit(url)
+        netloc = url_parsed.netloc
+        if ":" in netloc:
+            host, port = url_parsed.netloc.split(":")
+            port = int(port)
+        else:
+            host = url_parsed.netloc
+            port = 80
+        path = url_parsed.path
+        if not path:
+            path = "/"
+        return (host, port, path, netloc)
 
     def connect(self, host, port):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -68,32 +80,63 @@ class HTTPClient(object):
         return buffer.decode('utf-8')
 
     def GET(self, url, args=None):
-        url_split = urllib.parse.urlsplit(url)
-        print("url split", url_split)
-        netloc = url_split.netloc
-        if ":" in netloc:
-            host, port = url_split.netloc.split(":")
-            port = int(port)
-        else:
-            host = url_split.netloc
-            port = 80
+        
+        host, port, path, netloc = self.get_host_port_path(url)
         self.connect(host, port)
-        path = url_split.path
-        if not path:
-            path = "/"
-        print("GET {} HTTP/1.1\r\nHost: {}\r\n\r\n".format(path, netloc))
-        self.sendall("GET {} HTTP/1.1\r\nHost: {}\r\nConnection: keep-alive\r\n\r\n".format(path, netloc))
+
+        header = "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n".format(path, netloc)
+
+        self.sendall(header)
+
         data = self.recvall(self.socket)
         header = self.get_headers(data)
         code = self.get_code(header)
         body = self.get_body(data)
-        print("body", body)
+
+        # print out the result
+        print("\n/* GET result */")
+        print(data)
+        print("/* end GET result */\n")
+
         self.close()
+
         return HTTPResponse(code, body)
 
     def POST(self, url, args=None):
-        code = 500
-        body = ""
+
+        host, port, path, netloc = self.get_host_port_path(url)
+        self.connect(host, port)
+
+        # get the header
+        if args == None:
+            header = "POST {} HTTP/1.1\r\nHost: {}\r\nContent-Length: 0\r\n\r\n".format(path, netloc)
+        else:
+            content = ""
+            first = True
+            for key, value in args.items():
+                if first:
+                    first = False
+                else:
+                    content += "&"
+                content += key + "=" + value
+
+            content_len = len(content)
+            header = "POST {} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n\r\n{}\r\n\r\n".format(path, netloc, content_len, content)
+
+        self.sendall(header)
+
+        data = self.recvall(self.socket)
+        header = self.get_headers(data)
+        code = self.get_code(header)
+        body = self.get_body(data)
+
+        # print out the result
+        print("\n/* POST result */")
+        print(data)
+        print("/* end POST result */\n")
+
+        self.close()
+        
         return HTTPResponse(code, body)
 
     def command(self, url, command="GET", args=None):
